@@ -9,7 +9,7 @@ from pyltp import Segmentor
 import json
 import os
 
-CWS_MODEL_PATH = os.path.join('data', 'cws.model')  # 模型路径
+CWS_MODEL_PATH = os.path.join('ltp', 'cws.model')  # 模型路径
 STOPWORD_PATH = os.path.join('data', 'stopwords.txt')  # 停用词
 DATA_PATH = os.path.join('data', 'data.json')  # 数据路径
 OUTPUT_PATH = os.path.join('data', 'preprocessed.json')  # 输出路径
