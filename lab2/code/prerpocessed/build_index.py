@@ -15,8 +15,9 @@ from whoosh.index import open_dir
 from whoosh.qparser import QueryParser
 from whoosh import qparser
 
-DATA_PATH = os.path.join(os.pardir, os.pardir, 'data')
-MODEL_PATH = os.path.join(os.pardir, os.pardir, 'model')
+DIR_PATH = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(DIR_PATH, os.pardir, os.pardir, 'data')
+MODEL_PATH = os.path.join(DIR_PATH, os.pardir, os.pardir, 'model')
 
 idx_path = os.path.join(MODEL_PATH, 'index')
 if not os.path.exists(idx_path):
@@ -71,7 +72,7 @@ def predict():
             query = parser.parse(data['question'])
             results[data['qid']] = [int(dict(hit)['pid']) for hit in searcher.search(query)[:3]]
 
-    with open(os.path.join('data', 'result1.json'), 'w', encoding='utf-8')as f:
+    with open(os.path.join(DATA_PATH, 'result1.json'), 'w', encoding='utf-8')as f:
         json.dump(results, f)
 
 
@@ -89,10 +90,9 @@ def evaluate():
                 correct[i] += 1
                 break
 
-    print('question num: ', sample_num)
-    print('first correct: ', correct[0], '/', sample_num, '=', correct[0] / sample_num)
-    print('second correct: ', correct[1], '/', sample_num, '=', correct[1] / sample_num)
-    print('third correct: ', correct[2], '/', sample_num, '=', correct[2] / sample_num)
+    print('Top1: ', correct[0], '/', sample_num, '=', correct[0] / sample_num)
+    print('Top2: ', sum(correct[:2]), '/', sample_num, '=', sum(correct[:2]) / sample_num)
+    print('Top3: ', sum(correct), '/', sample_num, '=', sum(correct) / sample_num)
     fail_num = sample_num - sum(correct)
     print('fail: ', fail_num, '/', sample_num, '=', fail_num / sample_num)
 
