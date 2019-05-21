@@ -3,123 +3,191 @@
 """
 @author : 王晨懿
 @studentID : 1162100102
-@time : 2019/5/8
+@time : 2019/5/10
 """
-
 import os
-from pyltp import Segmentor
-from sklearn import preprocessing, linear_model, naive_bayes, metrics
+from pyltp import Segmentor, Postagger, Parser, NamedEntityRecognizer
+# import synonyms
+import jieba
+from sklearn import linear_model, naive_bayes, metrics, svm
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-import pickle
+from gensim.corpora.dictionary import Dictionary
+from code.question_classification.bow import BOW
 
-DATA_PATH = os.path.join(os.pardir, os.pardir, 'data')
-MODEL_PATH = os.path.join(os.pardir, os.pardir, 'model')
+DIR_PATH = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(DIR_PATH, os.pardir, os.pardir, 'data')
+MODEL_PATH = os.path.join(DIR_PATH, os.pardir, os.pardir, 'model')
 
-segmentor = Segmentor()  # 初始化实例
-segmentor.load(os.path.join(MODEL_PATH, 'ltp', 'cws.model'))  # 加载模型
+LTP_PATH = os.path.join(MODEL_PATH, 'ltp')
+
+train_path = os.path.join(DIR_PATH, 'train_que.dat')
+test_path = os.path.join(DIR_PATH, 'test_que.dat')
+
+que_words = ['谁', '谁是', '何', '什么', '是什么', '哪儿', '哪里', '哪', '哪个', '哪些', '几时', '几', '多少',
+             '怎', '怎么', '怎的', '怎样', '怎么样', '怎么着', '如何', '为什么',
+             '吗', '呢', '吧', '啊',
+             '难道', '岂', '居然', '竟然', '究竟', '简直', '难怪', '反倒', '何尝', '何必']
+
+with open(os.path.join(DATA_PATH, 'stopwords.txt'), 'r', encoding='utf-8') as f:
+    stopwords = set(x.strip() for x in f.readlines())
 
 
-def get_data(path, subtype=False):
-    labels, texts = [], []
+class MyParser(object):
+    def __init__(self):
+        # 分词
+        self.segmentor = Segmentor()
+        self.segmentor.load(os.path.join(LTP_PATH, 'cws.model'))
+        # 词性标注
+        self.postagger = Postagger()
+        self.postagger.load(os.path.join(LTP_PATH, 'pos.model'))
+        # 命名实体识别
+        self.recognizer = NamedEntityRecognizer()
+        self.recognizer.load(os.path.join(LTP_PATH, 'ner.model'))
+        # 依存句法分析
+        self.parser = Parser()
+        self.parser.load(os.path.join(LTP_PATH, 'parser.model'))
+
+    def parse(self, sent):
+        words = self.segmentor.segment(sent)
+        # words = jieba.lcut(sent)
+        postags = self.postagger.postag(words)
+        netags = self.recognizer.recognize(words, postags)
+        arcs = self.parser.parse(words, postags)
+        return words, postags, netags, arcs
+
+    def release(self):
+        self.segmentor.release()
+        self.postagger.release()
+        self.recognizer.release()
+        self.parser.release()
+
+
+# 特征提取
+class QuestionClassifier(object):
+    def __init__(self):
+        self.parser = MyParser()
+        self.model, self.model_sub = linear_model.LogisticRegression(), linear_model.LogisticRegression()
+        # self.model, self.model_sub = svm.SVC(), svm.SVC()
+        # self.model, self.model_sub = naive_bayes.MultinomialNB(), naive_bayes.MultinomialNB()
+        self.bow = BOW()
+        self.count = 0
+
+    def train(self):
+        texts, labels, subtype_label = get_data(train_path)
+        train_x = [self.extract(text) for text in texts]
+        with open('test.txt', 'w', encoding='utf-8') as f:
+            for i in range(len(labels)):
+                f.write(str(labels[i]) + '\t' + str(subtype_label[i]) + '\t' + str(train_x[i]) + '\n')
+        self.bow.fit(train_x)
+        train_x = self.bow.transform(train_x)
+        print(len(self.bow.vocab()))
+        self.model.fit(train_x, labels)
+        self.model_sub.fit(train_x, subtype_label)
+
+    def predict(self):
+        texts, labels, subtype_label = get_data(test_path)
+        test_x = [self.extract(text) for text in texts]
+        test_x = self.bow.transform(test_x)
+
+        acc1 = metrics.accuracy_score(self.model.predict(test_x), labels)
+        acc2 = metrics.accuracy_score(self.model_sub.predict(test_x), subtype_label)
+        return acc1, acc2
+
+    def extract(self, text):
+        words, postags, netags, arcs = self.parser.parse(text)
+
+        HEDs, SBJs, QWs, RELs = set(), set(), set(), set()  # 问题类别线索词集合（ Category Clue Words set ， CCWs ）
+        # 若其依存关系为 HED ，则加入 HEDs 集合
+        HEDs.update(idx for idx, arc in enumerate(arcs) if arc.relation == 'HED')
+        # 若其依存关系为COO,且其父节点是HED节点,则将其加入 HEDs 集合
+        HEDs.update(idx for idx, arc in enumerate(arcs) if arc.relation == 'COO' and arc.head - 1 in HEDs)
+        # 若其依存关系是SBV,且其父节点是HED节点,且与其父节点相邻，则将其加入 SBJs 集合
+        SBJs.update(idx for idx, arc in enumerate(arcs) if
+                    arc.relation == 'SBV' and arc.head - 1 in HEDs and abs(arc.head - 1 - idx) == 1)
+        # 若是从SBJ发出的的SBV或者COO关系，则将其加入 SBJs 集合
+        SBJs.update(idx for idx, arc in enumerate(arcs) if (arc.relation == 'SBV' or arc.relation == 'COO')
+                    and arc.head - 1 in SBJs)
+        # 若其词性为 r 且存在于疑问词表，则将其加入 QWs 集合
+        QWs.update(idx for idx in range(len(words)) if postags[idx] == 'r' and words[idx] in que_words)
+        # 若其父节点是疑问词，则将其加入 RELs 集合
+        RELs.update(idx for idx, arc in enumerate(arcs) if arc.head - 1 in QWs)
+        RELs.update(arcs[idx].head - 1 for idx in QWs)
+
+        ccw_features = ['key-' + '/'.join([words[i], postags[i], arcs[i].relation]) for i in HEDs | SBJs | QWs | RELs]
+        key_set = HEDs | SBJs | QWs | RELs
+        ccw_features += ['key-' + '/'.join([words[i], postags[i]]) for i in key_set]
+        ccw_features += ['key-' + '/'.join([words[i], netags[i]]) for i in key_set]
+        ccw_features += ['key-' + '/'.join([postags[i], netags[i]]) for i in key_set]
+        ccw_features += ['key-' + words[i] for i in key_set]
+
+        # # 核心词的近义词
+        # syn_features = []
+        # for i in HEDs | SBJs:
+        #     syn_words, score = synonyms.nearby(str(words[i]))
+        #     for idx, w in enumerate(syn_words):
+        #         if score[idx] < 0.6:
+        #             break
+        #         syn_features.append(w)
+
+        features = ['/'.join([words[i], postags[i]]) for i in range(len(words))]
+        features += ['/'.join([words[i], netags[i]]) for i in range(len(words))]
+        features += ['/'.join([words[i], postags[i], netags[i]]) for i in range(len(words))]
+
+        # unigram
+        # (0.8706240487062404, 0.743531202435312)
+        # return list(words)
+
+        # unigram & bigram
+        # (0.880517503805175, 0.7557077625570776)
+        # return list(words) + ['/'.join(x) for x in zip(words[:-1], words[1:])]
+
+        # unigram + 近义词
+        # (0.8698630136986302, 0.7572298325722984)
+        # return list(words) + syn_features
+
+        # w/p 组合特征
+        # (0.8713850837138508, 0.7427701674277016)
+        # return ['/'.join([words[i], postags[i]]) for i in range(len(words))]
+
+        # w/p + w/n + w/p/n 组合特征
+        # (0.8850837138508372, 0.7686453576864536)
+        # return features
+
+        # unigram + w/p + w/n + w/p/n
+        # (0.8873668188736682, 0.7770167427701674)
+        # return list(words) + features
+
+        # unigram + w/p + w/n + w/p/n + 问题类别线索词特征
+        # (0.9025875190258752, 0.8112633181126332)
+        # return list(words) + features + ccw_features
+
+        # unigram+bigram + w/p + w/n + w/p/n + 问题类别线索词特征
+        # (0.9033485540334856, 0.8105022831050228)
+        # return list(words) + ['/'.join(x) for x in zip(words[:-1], words[1:])] + features + ccw_features
+
+        # 复现论文《融合类别线索词的中文问题分类》 分类器和疑问词表有差别
+        # (0.8995433789954338, 0.7945205479452054)
+        # feature1 = ['/'.join([words[i], postags[i], netags[i]]) for i in range(len(words))]
+        # feature1 += [words[i] for i in HEDs | SBJs | QWs | RELs]
+        # feature1 += ['/'.join([words[i], postags[i]]) for i in RELs]
+        # return feature1
+
+
+def get_data(path):
+    texts, labels, subtype_label = [], [], []
     with open(path, 'r', encoding='utf-8') as f:
         for line in f.readlines():
-            content = line.split()
-            texts.append(content[1])
-            if subtype:
-                labels.append(content[0])
-            else:
-                labels.append(content[0][:3])
+            content = line.strip().split('\t')
+            if len(line) < 3:
+                continue
+            labels.append(content[0])
+            subtype_label.append(content[1])
+            texts.append(content[2])
 
-    texts = [' '.join(list(segmentor.segment(sent))) for sent in texts]
-    return texts, labels
-
-
-# 问题分类器
-class QuestionClassifier(object):
-    def __init__(self, fit_test=False, subtype=False):
-        """
-        :param fit_test: True: 将测试集一同训练 ; False: 只训练训练集
-        :param subtype: True: label取子类 ; False: label取大类
-        """
-        self.fit_test = fit_test
-        self.subtype = subtype
-        if self.subtype:
-            self.vectorizer_path = os.path.join(MODEL_PATH, 'ques_clf', 'vectorizer_subtype.pkl')
-            self.label_encoder_path = os.path.join(MODEL_PATH, 'ques_clf', 'label_encoder_subtype.pkl')
-            self.model_path = os.path.join(MODEL_PATH, 'ques_clf', 'model_subtype.pkl')
-        else:
-            self.vectorizer_path = os.path.join(MODEL_PATH, 'ques_clf', 'vectorizer.pkl')
-            self.label_encoder_path = os.path.join(MODEL_PATH, 'ques_clf', 'label_encoder.pkl')
-            self.model_path = os.path.join(MODEL_PATH, 'ques_clf', 'model.pkl')
-        self.fit()
-
-    def fit(self):
-        train_x, train_y = get_data('trian_questions.txt', subtype=self.subtype)
-        if self.fit_test:
-            test_x, test_y = get_data('test_questions.txt', subtype=self.subtype)
-            train_x += test_x
-            train_y += test_y
-        # 词袋模型
-        vectorizer = CountVectorizer()
-        train_x = vectorizer.fit_transform(train_x)
-        # label编码为目标变量
-        label_encoder = preprocessing.LabelEncoder()
-        train_y = label_encoder.fit_transform(train_y)
-        # 建立模型
-        model = linear_model.LogisticRegression()
-        model.fit(train_x, train_y)
-        # save
-        with open(self.vectorizer_path, 'wb') as fw:
-            pickle.dump(vectorizer, fw)
-        with open(self.label_encoder_path, 'wb') as fw:
-            pickle.dump(label_encoder, fw)
-        with open(self.model_path, 'wb') as fw:
-            pickle.dump(model, fw)
-
-    # 读取模型文件并预测
-    def predict(self, test_x):
-        vectorizer = pickle.load(open(self.vectorizer_path, "rb"))
-        test_x = vectorizer.transform(test_x)
-        model = pickle.load(open(self.model_path, "rb"))
-        return model.predict(test_x)
-
-    def evaluate(self, predictions, test_y):
-        label_encoder = pickle.load(open(self.label_encoder_path, "rb"))
-        test_y = label_encoder.transform(test_y)
-        return metrics.accuracy_score(predictions, test_y)
-
-
-# 测试模型效果
-def test_perform():
-    def train_model(model, train_x, train_y, test_x, test_y):
-        model.fit(train_x, train_y)
-        predictions = model.predict(test_x)
-        accuracy = metrics.accuracy_score(predictions, test_y)
-        return accuracy
-
-    subtype = True
-    train_x, train_y = get_data('trian_questions.txt', subtype=subtype)
-    test_x, test_y = get_data('test_questions.txt', subtype=subtype)
-    # 词袋模型
-    vectorizer = CountVectorizer()
-    train_x = vectorizer.fit_transform(train_x)
-    test_x = vectorizer.transform(test_x)
-    print(train_x.toarray().shape)
-    # label编码为目标变量
-    label_encoder = preprocessing.LabelEncoder()
-    train_y = label_encoder.fit_transform(train_y)
-    test_y = label_encoder.transform(test_y)
-    # 建立模型
-    model = linear_model.LogisticRegression()
-    # model = naive_bayes.MultinomialNB()
-    accuracy = train_model(model, train_x, train_y, test_x, test_y)
-    print(accuracy)
+    return texts, labels, subtype_label
 
 
 if __name__ == '__main__':
-    test_perform()
-
-    # clf = QuestionClassifier(fit_test=False, subtype=False)
-    # test_x, test_y = get_data('test_questions.txt', subtype=False)
-    # predictions = clf.predict(test_x)
-    # print(clf.evaluate(predictions, test_y))
+    fe = QuestionClassifier()
+    fe.train()
+    print(fe.predict())
