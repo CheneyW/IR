@@ -13,6 +13,7 @@ from sklearn import linear_model, naive_bayes, metrics, svm
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from gensim.corpora.dictionary import Dictionary
 from code.question_classification.bow import BOW
+from sklearn.externals import joblib
 
 DIR_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(DIR_PATH, os.pardir, os.pardir, 'data')
@@ -84,6 +85,15 @@ class QuestionClassifier(object):
         self.model.fit(train_x, labels)
         self.model_sub.fit(train_x, subtype_label)
 
+        self.bow.save(os.path.join(MODEL_PATH, 'que_clf', 'bow.json'))
+        joblib.dump(self.model, os.path.join(MODEL_PATH, 'que_clf', 'model.pkl'))
+        joblib.dump(self.model_sub, os.path.join(MODEL_PATH, 'que_clf', 'model_sub.pkl'))
+
+    def load(self):
+        self.bow.load(os.path.join(MODEL_PATH, 'que_clf', 'bow.json'))
+        self.model = joblib.load(os.path.join(MODEL_PATH, 'que_clf', 'model.pkl'))
+        self.model_sub = joblib.load(os.path.join(MODEL_PATH, 'que_clf', 'model_sub.pkl'))
+
     def predict(self):
         texts, labels, subtype_label = get_data(test_path)
         test_x = [self.extract(text) for text in texts]
@@ -92,6 +102,13 @@ class QuestionClassifier(object):
         acc1 = metrics.accuracy_score(self.model.predict(test_x), labels)
         acc2 = metrics.accuracy_score(self.model_sub.predict(test_x), subtype_label)
         return acc1, acc2
+
+    def predict_sent(self, sent):
+        test_x = self.extract(sent)
+        test_x = self.bow.transform([test_x])
+        p1 = self.model.predict(test_x)[0]
+        p2 = self.model_sub.predict(test_x)[0]
+        return p1, p2
 
     def extract(self, text):
         words, postags, netags, arcs = self.parser.parse(text)
@@ -159,7 +176,7 @@ class QuestionClassifier(object):
 
         # unigram + w/p + w/n + w/p/n + 问题类别线索词特征
         # (0.9025875190258752, 0.8112633181126332)
-        # return list(words) + features + ccw_features
+        return list(words) + features + ccw_features
 
         # unigram+bigram + w/p + w/n + w/p/n + 问题类别线索词特征
         # (0.9033485540334856, 0.8105022831050228)
@@ -188,6 +205,13 @@ def get_data(path):
 
 
 if __name__ == '__main__':
+    # fe = QuestionClassifier()
+    # fe.train()
+
     fe = QuestionClassifier()
-    fe.train()
-    print(fe.predict())
+    fe.load()
+
+    # print(fe.predict())
+    #
+    s = '降雨最少的大陆是哪块'
+    print(fe.predict_sent(s))

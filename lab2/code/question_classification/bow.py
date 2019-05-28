@@ -5,6 +5,7 @@
 @studentID : 1162100102
 @time : 2019/5/19
 """
+import json
 
 
 class BOW(object):
@@ -27,6 +28,16 @@ class BOW(object):
                 if w in self.dic.keys():
                     out[i][self.dic[w]] = 1
         return out
+
+
+    def save(self, path):
+        with open(path, 'w', encoding='utf-8')as f:
+            json.dump(self.dic, f)
+            print(self.dic)
+
+    def load(self, path):
+        with open(path, 'r', encoding='utf-8')as f:
+            self.dic = json.load(f)
 
     def vocab(self):
         return self.dic
