@@ -39,6 +39,7 @@ def preprocess():
     train_data = get_train_data()
     passages = get_passages()
     preprocessed_data = []
+    error_count = 0
     for train in train_data:
         data = dict()
         # 文档
@@ -51,12 +52,13 @@ def preprocess():
                 if idx not in answer_idx:
                     answer_idx.append(idx)
         except:
+            error_count+=1
             continue
         data['answer_idx'] = answer_idx
         # 问题
         data['question'] = train['question']
         preprocessed_data.append(data)
-
+    print(error_count)
     # svm rank
     with open(os.path.join(DIR_PATH, 'data.json'), 'w', encoding='utf-8') as f:
         for data in preprocessed_data:
