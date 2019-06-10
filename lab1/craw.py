@@ -13,6 +13,7 @@ import os
 import json
 import re
 import requests
+import time
 
 DATA_PATH = os.path.join('data', 'data.json')  # 数据路径
 FILE_PATH = os.path.join('data', 'attachment')  # 附件路径
@@ -52,10 +53,11 @@ class UrlManager(object):
 class Crawler(object):
     def __init__(self):
         self.url_manager = UrlManager()
+        self.titles = []
 
     # 爬取
     def crawl(self, root_url, page_num=1000):
-        count = 1  # record the current number url
+        count = 0  # record the current number url
         self.url_manager.add_url(root_url)
         while self.url_manager.not_empty():
             try:
@@ -66,17 +68,23 @@ class Crawler(object):
                 # 过滤过短的文本
                 if len(data['paragraphs']) < text_len_threshold:
                     continue
+                # 重复爬取
+                if data['title'] in self.titles:
+                    continue
+                self.titles.append(data['title'])
+
                 self.save(data, imgs)
-                print('crawl %4d: %s \t%s' % (count, data['title'], new_url))
+                print('crawl %4d: %s \t%s' % (count + 1, data['title'], new_url))
+                count += 1
                 if count == page_num:
                     break
-                count += 1
             except Exception as e:
                 print(e)
 
     # 请求下载页面
     @staticmethod
     def download(url):
+        time.sleep(1)
         response = request.urlopen(url)
         if response.getcode() != 200:  # 判断是否请求成功
             return None
