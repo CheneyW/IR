@@ -93,8 +93,48 @@ def evaluate():
     return mrr, map, top_n
 
 
+def run():
+    """
+    最终的文件测试
+    """
+    with open(os.path.join(SVM_PATH, 'test.dat'), 'r', encoding='utf-8')as f:
+        sample = f.readlines()
+    with open(os.path.join(SVM_PATH, 'predictions.dat'), 'r', encoding='utf-8')as f:
+        predict = f.readlines()
+
+    ques = dict()
+    for i, line in enumerate(sample):
+        content = line.split()
+        if len(content) < 2:
+            continue
+        label = int(content[0])
+        qid = int(content[1][4:])
+        prob = float(predict[i].strip())
+
+        if qid not in ques.keys():
+            ques[qid] = Item(qid)
+        ques[qid].add(label, prob)
+
+    results = []
+    for x in ques.values():
+        results.append(x.get_rank()[0])
+
+    with open(os.path.join(DIR_PATH, 'result_task1.json'), 'r', encoding='utf-8')as f:
+        data = [json.loads(line) for line in f.readlines()]
+    for i, d in enumerate(data):
+        d['answer_sentence'] = [d['document'][results[i]]]
+        del d['document']
+
+    with open(os.path.join(DIR_PATH, 'result_task3.json'), 'w', encoding='utf-8')as f:
+        for d in data:
+            json.dump(d, f, ensure_ascii=False)
+            f.write('\n')
+
+
 if __name__ == '__main__':
     mrr, map, top = evaluate()
     print('MRR:', mrr)
-    # print('MAP:', map)
+    print('MAP:', map)
     print('\n'.join(['top%d : %f' % (idx + 1, x) for idx, x in enumerate(top)]))
+
+    # run()

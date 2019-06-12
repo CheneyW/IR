@@ -29,7 +29,6 @@ class FeatureExtractor(object):
         self.pos_bow.fit([['a', 'b', 'c', 'd', 'e', 'g', 'h', 'i', 'j', 'k', 'm', 'n', 'nd', 'nh', 'ni', 'nl', 'ns',
                            'nt', 'nz', 'o', 'p', 'q', 'r', 'u', 'v', 'wp', 'ws', 'x', 'z']])
         self.qc = QuestionClassifier()
-        self.qc.load()
         with open(os.path.join(DIR_PATH, 'data.json'), 'r', encoding='utf-8') as f:
             self.preprocessed_data = [json.loads(x) for x in f.readlines()]
 

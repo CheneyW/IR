@@ -29,7 +29,7 @@ def split():
 
 
 if __name__ == '__main__':
-    split()
+    # split()
 
     os.system('svm_rank_learn.exe -c 200 train.dat model')
 
