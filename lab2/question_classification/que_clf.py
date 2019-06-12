@@ -34,7 +34,7 @@ with open(os.path.join(DATA_PATH, 'stopwords.txt'), 'r', encoding='utf-8') as f:
 
 # 特征提取
 class QuestionClassifier(object):
-    def __init__(self):
+    def __init__(self, load=True):
         self.ltp = LTP()
         self.model, self.model_sub = linear_model.LogisticRegression(), linear_model.LogisticRegression()
 
@@ -43,8 +43,17 @@ class QuestionClassifier(object):
         self.bow = BOW()
         self.count = 0
 
-    def train(self):
+        if load:
+            self.load()
+
+    def train(self, fit_test=False):
         texts, labels, subtype_label = get_data(train_path)
+        if fit_test:
+            texts2, labels2, subtype_label2 = get_data(test_path)
+            texts += texts2
+            labels += labels2
+            subtype_label += subtype_label2
+
         train_x = [self.extract(text) for text in texts]
         with open('test.txt', 'w', encoding='utf-8') as f:
             for i in range(len(labels)):
@@ -181,11 +190,10 @@ def get_data(path):
 
 
 if __name__ == '__main__':
-    # fe = QuestionClassifier()
-    # fe.train()
+    fe = QuestionClassifier(load=False)
+    fe.train(fit_test=False)
 
-    fe = QuestionClassifier()
-    fe.load()
+    # fe = QuestionClassifier()
 
     print(fe.predict())  # (0.9025875190258752, 0.8112633181126332)
     #
