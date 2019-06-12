@@ -24,7 +24,6 @@ class MyTab(QWidget):
     def __init__(self, table, retriever):
         super().__init__()
         self.setWindowTitle('企业检索系统')
-        # self.resize(640, 480)
         self.btn_search = QPushButton('查询')
         self.btn_open = QPushButton('打开')
         self.query_text = QLineEdit(self)
@@ -144,7 +143,7 @@ class RetrievalSystem(QTabWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('企业检索系统')
-        self.resize(1000, 800)
+        self.resize(700, 500)
 
         table1 = QTableWidget(self)
         table1.setColumnCount(4)

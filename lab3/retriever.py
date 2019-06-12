@@ -42,7 +42,8 @@ class Retriever(object):
 
     def _bm25_build(self):
         if not os.path.exists(bm25_data_path):
-            corpus = [data['segmented_title'] + data['segmented_paragraphs'] for data in self.data]
+            corpus = [data['segmented_title'] + data['segmented_title'] + data['segmented_paragraphs']
+                      for data in self.data]
             bm25_data = BM25(corpus)
             bm25_data.save(bm25_data_path)
         if not os.path.exists(bm25_file_path):
