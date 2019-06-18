@@ -4,23 +4,21 @@
 @author : 王晨懿
 @studentID : 1162100102
 @time : 2019/6/9
+
+从数据中检索数据 & 检索附件
 """
 
 import os
 import json
-import jieba
 import numpy as np
 from bm25 import BM25
+from inverted_index import InvertedIndex
+from pyltp import Segmentor
 
 DIR_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(DIR_PATH, 'data')
 ATTACHMENT_PATH = os.path.join(DATA_PATH, 'attachment')
 MODEL_PATH = os.path.join(DIR_PATH, 'model')
-
-if not os.path.exists(MODEL_PATH):
-    os.mkdir(MODEL_PATH)
-bm25_data_path = os.path.join(MODEL_PATH, 'bm25_data.json')
-bm25_file_path = os.path.join(MODEL_PATH, 'bm25_file.json')
 
 
 class Retriever(object):
@@ -30,9 +28,19 @@ class Retriever(object):
         for idx, data in enumerate(self.data):
             self.idx2file += [(idx, i) for i in range(len(data['segmented_file_name']))]
 
-        self._bm25_build()
-        self.bm25_data = BM25(None, path=bm25_data_path)
-        self.bm25_file = BM25(None, path=bm25_file_path)
+        corpus = [data['segmented_title'] + data['segmented_title'] + data['segmented_paragraphs']
+                  for data in self.data]
+        self.bm25_data = BM25(corpus)
+        self.inverted_index_data = InvertedIndex(corpus)
+
+        corpus = []
+        for idx, data in enumerate(self.data):
+            corpus += [data['segmented_title'] + file for file in data['segmented_file_name']]
+        self.bm25_file = BM25(corpus)
+        self.inverted_index_file = InvertedIndex(corpus)
+
+        self.segmentor = Segmentor()  # 初始化实例
+        self.segmentor.load(os.path.join(MODEL_PATH, 'cws.model'))  # 加载模型
 
     @staticmethod
     def _get_data():
@@ -40,33 +48,22 @@ class Retriever(object):
             lines = f.readlines()
         return [json.loads(s) for s in lines]
 
-    def _bm25_build(self):
-        if not os.path.exists(bm25_data_path):
-            corpus = [data['segmented_title'] + data['segmented_title'] + data['segmented_paragraphs']
-                      for data in self.data]
-            bm25_data = BM25(corpus)
-            bm25_data.save(bm25_data_path)
-        if not os.path.exists(bm25_file_path):
-            corpus = []
-            for idx, data in enumerate(self.data):
-                corpus += [data['segmented_title'] + file for file in data['segmented_file_name']]
-            bm25_file = BM25(corpus)
-            bm25_file.save(bm25_file_path)
-
-    def search_data(self, query):
-        query = jieba.lcut(query)
-        scores = self.bm25_data.get_scores(query)
+    def search_data(self, query, level):
+        query = list(self.segmentor.segment(query))
+        result_idx = self.inverted_index_data.search(query)  # 倒排索引查询相关文档
+        scores = self.bm25_data.get_scores_in_result(query, result_idx)  # bm25排序
         result = np.argsort(-np.array(scores))
         zero_idx = len(result)
         for i in range(len(result)):
             if scores[result[i]] == 0:
                 zero_idx = i
                 break
-        return [self.data[idx] for idx in result[:zero_idx]]
+        return [self.data[idx] for idx in result[:zero_idx] if self.data[idx]['level'] <= level]
 
-    def search_file(self, query):
-        query = jieba.lcut(query)
-        scores = self.bm25_file.get_scores(query)
+    def search_file(self, query, level):
+        query = list(self.segmentor.segment(query))
+        result_idx = self.inverted_index_file.search(query)  # 倒排索引查询相关文档
+        scores = self.bm25_file.get_scores_in_result(query, result_idx)  # bm25排序
         result = np.argsort(-np.array(scores))
         zero_idx = len(result)
         for i in range(len(result)):
@@ -74,8 +71,9 @@ class Retriever(object):
                 zero_idx = i
                 break
         result = [self.idx2file[idx] for idx in result[:zero_idx]]
-        result = [(self.data[data_idx]['file_name'][file_idx], self.data[data_idx]['title'])
-                  for data_idx, file_idx in result]
+        result = [
+            (self.data[data_idx]['file_name'][file_idx], self.data[data_idx]['title'], self.data[data_idx]['level'])
+            for data_idx, file_idx in result if self.data[data_idx]['level'] <= level]
         return result
 
 

@@ -53,6 +53,11 @@ class BM25(object):
         scores = [self.get_score(query, index) for index in range(self.corpus_size)]
         return scores
 
+    # 搜索词和倒排文档查询出的相关文档之间相关性
+    def get_scores_in_result(self, query, result_idx):
+        scores = [self.get_score(query, index) if index in result_idx else 0 for index in range(self.corpus_size)]
+        return scores
+
     # 保存模型
     def save(self, path):
         this = dict()
